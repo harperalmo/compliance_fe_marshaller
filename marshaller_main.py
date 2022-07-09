@@ -3,7 +3,7 @@ marshaller_main.py
 Uses a timer interrupt to poll for the existence of data in the uart buffer.
 This will allow other things to get done rather than spending all the time
 polling. Need to think about where to insert disable_irq and enable_irq.
-Save onto esp32 as main.py to use.
+Save onto espp32 as main.py to use.
 """
 import machine
 from machine import UART
@@ -20,6 +20,7 @@ class Marshaller:
     #Class attributes
     _storage_name   = "componentIds.json"
     _mac_dict = {}
+    
     
     #set up the uart
     baud = 115200
@@ -45,15 +46,15 @@ class Marshaller:
     
     def __init__(self):
         print('In init')
+        #cmds_dict holds commands targeted at this object. To add
+        #new commmands, add in the command name and write a
+        #callback handler of the same name. The dictionary can be
+        #used to invoke the command action.
         
-        #Read in the mac ids for the backend axis controllers
-        self._mac_dict , self._this_mac = self._get_mac_ids()
-        print(f"In init, mac_dict: {self._mac_dict}, this_mac: {self._this_mac}")
-        #configure esp-now stuff
-        for peer_mac_str in self._mac_dict.values():
-            peer_mac_bytes = self.mac_str_to_bytes(peer_mac_str)
-            self.esp_if.add_peer(peer_mac_bytes)
-        self.esp_if.config( on_recv = self.on_espnow_recv_cb)
+        self.cmds_dict = {}
+        self.cmds_dict ["set_axis_mac_ids"] = self.set_axis_mac_ids
+        self.this_mac = ""
+        
         
         #Finish up the callback link to the timer now that we have
         #an instance
@@ -61,18 +62,17 @@ class Marshaller:
                                 callback=self.on_timer_interrupt)
         print('Leave init')
 
-    def _get_mac_ids(self):
-        """Private function used to get current ids into dictionary. The file
-        uses dictionary format."""
-        #access the contents of the storage file
-        with open(self._storage_name) as json_file:
-            component_list = json.load(json_file)
-            print(f'component list: {component_list}')
-            this_mac = component_list[1].pop('m')
-            print(f'this mac: {this_mac}')
-            peer_ids = component_list[1]
-            print(f'peer_ids: {peer_ids}')
-            return peer_ids, this_mac
+    def set_axis_mac_ids(self, parms, block):
+        for axis, mac_str in parms:
+            self._mac_dict[axis] = mac_str
+        print (f"in set_axis_mac, {self._mac_dict}")
+        self.this_mac = self._mac_dict.get('m')
+        for peer_mac_str in self._mac_dict.values():
+            peer_mac_bytes = self.mac_str_to_bytes(peer_mac_str)
+            self.esp_if.add_peer(peer_mac_bytes)
+        self.esp_if.config( on_recv = self.on_espnow_recv_cb)
+            
+
         
     def mac_str_to_bytes(self, mac_str):
         """ given a mac address as a string in the form hh:hh:hh:hh:hh:hh,
@@ -87,11 +87,18 @@ class Marshaller:
         bytes_read = self.uart1.read()
         if bytes_read != None:
             cmd = json.loads(bytes_read)
-            print(cmd)
+            print(f"in read_uart, cmd is: {cmd}")
             #bytes_read = bytes_read.decode('utf-8').rstrip('\n')
             print(f"cmd: {len(cmd)}: <{cmd}>. It is of type {type(cmd)}.")
             #TODO: This is stopgap just to check. BAD CODE!!!!!!
-            self.send_cmd_over_esp( cmd[1], cmd[0], cmd[2], cmd[3])
+            if cmd[1] != 'm':
+                self.send_cmd_over_esp( cmd[1], cmd[0], cmd[2], cmd[3])
+            else:
+                self.cmds_dict.get(cmd[0])( cmd[2], cmd[3])
+
+
+
+            
             
     def serialize( self, str_list):
         """ Serializes a list of string elements using json in order to
