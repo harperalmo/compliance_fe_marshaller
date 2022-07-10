@@ -3,7 +3,7 @@ marshaller_main.py
 Uses a timer interrupt to poll for the existence of data in the uart buffer.
 This will allow other things to get done rather than spending all the time
 polling. Need to think about where to insert disable_irq and enable_irq.
-Save onto espp32 as main.py to use.
+Save onto esp32 as main.py to use.
 """
 import machine
 from machine import UART
@@ -111,8 +111,10 @@ class Marshaller:
     def send_cmd_over_esp( self, axis, cmd, parm, block):
         cmd_list = [cmd, parm, block]
         serial_cmd = self.serialize(cmd_list)
+        print(f"in send_cmd_over_esp. _mac_dict: {self._mac_dict}")
         mac_str = self._mac_dict.get(axis)
         mac_bytes = self.mac_str_to_bytes(mac_str)
+        print(f"Sending <{serial_cmd}> to <{mac_stgr}> over espnow")
         success = self.esp_if.send( mac_bytes, serial_cmd, True)
         if not success:
             print('espnow message send failed.')
@@ -135,5 +137,4 @@ class Marshaller:
 marshaller = Marshaller()
 while True:
     pass
-
 
